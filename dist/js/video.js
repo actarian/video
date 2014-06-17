@@ -46,12 +46,18 @@
 		function Init ($callback) {
 			$("videoplayer[data-init!='true']").each(function(){
 				var videoplayer = $(this);
-				videoplayer.attr('data-init','true');
+				videoplayer.attr('data-init', 'true');
+				var id = 'videoplayer-' + items.length;
+				videoplayer.attr('id', id);
+				var overlay = $('<overlay><a href="#" class="btn btn-cta btn-play" title="Play Video"><span>Play Video</span></a></overlay>');
+				overlay.appendTo(videoplayer);
 				var item = {
-					vimeo: 				videoplayer.attr('data-vimeo'),
-					youtube: 			videoplayer.attr('data-youtube'),
-					route : 			videoplayer.attr('data-route'),
-					poster : 			videoplayer.attr('data-poster'),
+					vimeo: 				videoplayer.attr('vimeo'),
+					youtube: 			videoplayer.attr('youtube'),
+					source : 			videoplayer.attr('source'),
+					poster : 			videoplayer.attr('poster'),
+					crop : 				videoplayer.hasClass('crop'),
+					circle : 			videoplayer.hasClass('circle'),
 					videoplayer : 		videoplayer,
 					paused : 			true,
 					callback : 			$callback
@@ -64,12 +70,15 @@
 				item.onState 		= onState;
 
 				items.push (item);
-				videoplayers[videoplayer] = item;
+				videoplayers[id] = item;
 				if (item.vimeo) {
+					videoplayer.addClass('vimeo');
 					VideoVimeo.Load(item);
 				} else if (item.youtube) {
+					videoplayer.addClass('youtube');
 					VideoYoutube.Load(item);
 				} else {
+					videoplayer.addClass('html5');
 					VideoHtml5.Load(item);
 				}
 				if (item.poster) {
@@ -77,6 +86,13 @@
 		    	}		    	
 			});
 		}
+
+		$(document).ready(function(){
+			Video.Init(function() {
+				console.log ('Video.Init.callback');
+				// Columnzr.Recol.call(link.closest('.items')[0]);
+			});
+		});
 
 		function Poster ($item) {
 			$('<img src="'+ $item.poster +'" class="poster"/>').prependTo($item.videoplayer.find('overlay'));
@@ -100,23 +116,59 @@
 			// var ww = win.width();
 			// var wh = win.height();
 			$.each(items,function(i,item) {
-				var ww = item.videoplayer.width();
-				var ratio = 16 / 9;
+				var vw = item.videoplayer.width();
+				var vh = item.videoplayer.height();
+				var vr = vw / vh;
+				var ir = 16 / 9;
 				if (item.videoWidth) {
-					ratio = item.videoWidth / item.videoHeight;
+					ir = item.videoWidth / item.videoHeight;
 				} else if (item.posterWidth) {
-					ratio = item.posterWidth / item.posterHeight;
+					ir = item.posterWidth / item.posterHeight;
 				}
-				var nw = ww, nh = ww / ratio;
+				var nw, nh, nl, nt, d = 2;
+				// CROP
 				if (item.player) {
-					item.player.width = nw;
-					item.player.height = nh;
-					if (item.vimeo) {
-						var iframe = $('videoplayer iframe');
-						iframe.width(nw); iframe.height(nh);
+					if (item.crop) {
+						if (item.circle) {
+							vh = vw;
+							vr = 1;
+							item.videoplayer.height(vh);
+						}
+						if (ir > vr){
+							nh = vh + d;
+							nw = nh * ir;
+						} else {
+							nw = vw + d;
+							nh = nw / ir;
+						}
+						nl = (vw-nw)/2;
+						nt = (vh-nh)/2;
+					} else {
+						nw = vw;
+						nh = vw / ir;
+						nl = 0;
+						nt = 0;
+						if (item.vimeo || item.youtube) {
+							item.videoplayer.height(nh);
+						}					
+					}
+					if (item.vimeo) {							
+						var iframe = item.videoplayer.find('iframe');
+						iframe.css({	'width':nw+'px',
+										'height':(nh + 120)+'px',
+										'left':nl+'px',
+										'top':(nt-60)+'px'});
 					} else if (item.youtube) {
-						var iframe = $('videoplayer iframe');
-						iframe.width(nw); iframe.height(nh);
+						item.player.width = nw;
+						item.player.height = nh + 240;
+						var iframe = item.videoplayer.find('iframe');
+						iframe.css({	'width':nw+'px',
+										'height':(nh + 240)+'px',
+										'left':nl+'px',
+										'top':(nt-120)+'px'});
+					} else {
+						item.player.width = nw;
+						item.player.height = nh;
 					}
 				}
 				// console.log ('Video.Resize', nw, nh);				
@@ -136,10 +188,10 @@
 		}
 
 		function togglePlay () {
-			// SetVars.call ($(this).closest('.detail')[0]);
 			// console.log ('Video.togglePlay', video);
 			var videoplayer = $(this).closest('videoplayer');
-			var item = videoplayers[videoplayer];
+			var item = videoplayers[videoplayer.attr('id')];
+			console.log(videoplayer);
 			if (item.player) {
 				if (item.paused) {
 					item.Play ();					
@@ -178,6 +230,7 @@
 		Video.Init 		= Init;	
 		Video.Clear 	= Clear;	
 		Video.togglePlay = togglePlay;
+		Video.videoplayers = videoplayers;
 
 		return Video;	
 
@@ -203,7 +256,7 @@
 
 		function Buffer ($e) {
 			var player = $e.target;
-			var item = players[player];			
+			var item = players[player.id];			
 			var buffer = player.buffered, start, end, maxBuffer = 0;
 			if (buffer) {
 				var i = 0; t = buffer.length;
@@ -230,20 +283,20 @@
 
 		function onVideoLoadStart ($e) {
 			var player = $($e.target)[0];
-			var item = players[player];
+			var item = players[player.id];
 			// console.log ('VideoHtml5.onVideoLoadStart', item);
 			item.onLoad ? item.onLoad(item) : null;
 		}
 		function onVideoProgress ($e) {
 			var player = $($e.target)[0];
-			var item = players[player];
+			var item = players[player.id];
 			// console.log ('VideoHtml5.onVideoProgress', item);
 			item.progress = Buffer ($e);
 			item.onProgress ? item.onProgress(item) : null;	
 		}
 		function onVideoCanPlay ($e) {
 			var player = $($e.target)[0];
-			var item = players[player];
+			var item = players[player.id];
 			// console.log ('VideoHtml5.onVideoCanPlay', item);
 			item.videoWidth = player.videoWidth;
 			item.videoHeight = player.videoHeight;
@@ -251,13 +304,13 @@
 		}
 		function onVideoCanThrough ($e) {
 			var player = $($e.target)[0];
-			var item = players[player];
+			var item = players[player.id];
 			// console.log ('VideoHtml5.onVideoCanThrough', item);
 			item.onLoadComplete ? item.onLoadComplete(item) : null;
 		}
 		function onVideoEnded ($e) {
 			var player = $($e.target)[0];
-			var item = players[player];
+			var item = players[player.id];
 			// console.log ('VideoHtml5.onVideoEnded', item);
 			item.paused = true;
 			item.buffering = false;
@@ -265,7 +318,7 @@
 		}
 		function onVideoError ($e) {
 			var player = $($e.target)[0];
-			var item = players[player];
+			var item = players[player.id];
 			// console.log ('VideoHtml5.onVideoError', item);
 			item.paused = true;
 			item.buffering = false;
@@ -273,7 +326,7 @@
 		}
 		function onVideoPlay ($e) {
 			var player = $($e.target)[0];
-			var item = players[player];
+			var item = players[player.id];
 			// console.log ('VideoHtml5.onVideoPlay', item);
 			item.paused = false;
 			item.buffering = false;
@@ -281,7 +334,7 @@
 		}
 		function onVideoPause ($e) {
 			var player = $($e.target)[0];
-			var item = players[player];
+			var item = players[player.id];
 			// console.log ('VideoHtml5.onVideoPause', item);
 			item.paused = true;
 			item.buffering = false;
@@ -289,7 +342,7 @@
 		}
 		function onVideoWaiting ($e) {
 			var player = $($e.target)[0];
-			var item = players[player];
+			var item = players[player.id];
 			// console.log ('VideoHtml5.onVideoWaiting', item);
 			item.paused = true;
 			item.buffering = true;
@@ -298,7 +351,7 @@
 
 	    function Load ($item) {
 	    	$item.id = 'videohtml5-' + count; count ++;
-	    	var playerTag = $('<video id="'+ $item.id +'" class="html5player"><source src="'+ $item.route +'" type="video/mp4"></video>').prependTo($item.videoplayer);
+	    	var playerTag = $('<video id="'+ $item.id +'" class="html5player"><source src="'+ $item.source +'" type="video/mp4"></video>').prependTo($item.videoplayer);
 	    	var player = playerTag[0];
 
 	    	player.addEventListener('loadstart', 			onVideoLoadStart, false);
@@ -310,9 +363,10 @@
 			player.addEventListener('play', 				onVideoPlay, false);	
 			player.addEventListener('pause', 				onVideoPause, false);	
 			player.addEventListener('waiting', 				onVideoWaiting, false);	
+			player.id = $item.id;
 
 			$item.player = player;
-			players[player] = $item;
+			players[player.id] = $item;
 
 			$item.Play = function () {
 				player.play();
@@ -365,15 +419,20 @@
 
 	    function onPlayerReady ($e) {
 	    	var player = $e.target;
-	    	var item = players[player];
-	    	// console.log ('VideoYoutube.onPlayerReady', item);
+	    	var item = players[player.id];
+
+	    	// console.log ('VideoYoutube.onPlayerReady', player);
 	    	// console.log ('VideoYoutube.onPlayerReady', 'item.id', item.id);
 	    	// console.log ('VideoYoutube.onPlayerReady.getVideoData', player.width, player.height);
 	    	// player.playVideo();
 			// player.stopVideo();
 			// RemoveAds (player);
 
-			console.log ('VideoYoutube.onPlayerReady', player);
+			item.videoWidth = player.width;
+			item.videoHeight = player.height;
+			item.onReady ? item.onReady(item) : null;
+
+			console.log ('VideoYoutube.onPlayerReady', player.width, player.height);
 
 			/*
 			$.ajax({
@@ -396,7 +455,7 @@
 		function onPlayerStateChange ($e) {
 	    	// console.log ('VideoYoutube.onPlayerStateChange', $e.data);
 	    	var player = $e.target;
-	    	var item = players[player];
+	    	var item = players[player.id];
 	    	switch ($e.data) {
 	    		case YT.PlayerState.PLAYING:
 	    			item.paused = false;
@@ -423,19 +482,41 @@
 		function onPlayerError ($e) {
 	    	console.log ('VideoYoutube.onPlayerError');	
 	    	var player = $e.target;
-	    	var item = players[player];
+	    	var item = players[player.id];
 	    	item.onError ? item.onError(item) : null;    	
 	    }
 
 	    function Create ($item) {
     		// console.log ('VideoYoutube.Create', $item.id);
 	    	// 'M7lc1UVf-VE'
+	    	/*
+	    	autohide
+			autoplay
+			cc_load_policy
+			color
+			controls
+			disablekb
+			enablejsapi
+			end
+			fs
+			iv_load_policy
+			list
+			listType
+			loop
+			modestbranding
+			origin
+			playerapiid
+			playlist
+			playsinline
+			rel
+			showinfo
+			start
+			theme
+	    	*/
 	    	var id = $item.id, url = $item.youtube, player;
 			player = new YT.Player(id, {
-				width: $(window).width(),
-    			height: $(window).width() / 16 * 9,
-    			videoId: url,
-				playerVars: { 'autoplay': 0, 'controls': 0, 'html5':1,'enablejsapi':1, 'origin':document.location.hostname, 'suggestedQuality': 'hd1080' },
+				videoId: url,
+				playerVars: { 'rel': 0, 'playerapiid': id, 'showinfo': 0, 'modestbranding': 1, 'autoplay': 0, 'controls': 0, 'html5':1,'enablejsapi':1, 'origin':document.location.hostname, 'suggestedQuality': 'hd1080' },
 				events: {
 					'onReady': onPlayerReady,
 					'onPlaybackQualityChange': onPlayerPlaybackQualityChange,
@@ -443,8 +524,9 @@
 					'onError': onPlayerError
 				}
 			});
+			player.id = $item.id;
 			$item.player = player;
-			players[player] = $item;
+			players[player.id] = $item;
 
 			$item.Play = function () {
 				player.playVideo();
@@ -529,7 +611,7 @@
 
 	    function onPlayerReady ($e) {
 	    	var player = $e.target;
-	    	var item = players[player];
+	    	var item = players[player.id];
 	    	// console.log ('VideoVimeo.onPlayerReady', item);
 	    	// console.log ('VideoVimeo.onPlayerReady', 'item.id', item.id);
 	    	// console.log ('VideoVimeo.onPlayerReady.getVideoData', player.width, player.height);
@@ -557,7 +639,7 @@
 		function onPlayerStateChange ($e) {
 	    	// console.log ('VideoVimeo.onPlayerStateChange', $e.data);
 	    	var player = $e.target;
-	    	var item = players[player];
+	    	var item = players[player.id];
 	    	switch ($e.data) {
 	    		case YT.PlayerState.PLAYING:
 	    			item.paused = false;
@@ -593,7 +675,7 @@
 
 		function Buffer ($e) {
 			var player = $e.target;
-			var item = players[player];			
+			var item = players[player.id];			
 			var buffer = player.buffered, start, end, maxBuffer = 0;
 			if (buffer) {
 				var i = 0; t = buffer.length;
@@ -621,7 +703,7 @@
 		function onPlayerProgress ($e) {
 	    	// console.log ('VideoVimeo.onPlayerProgress', arguments);	
 	    	var player = $e.target;
-	    	var item = players[player];
+	    	var item = players[player.id];
 	    	// console.log ($e.data);
 	    	item.progress = parseFloat($e.data.percent);
 			item.onProgress ? item.onProgress(item) : null;			
@@ -629,7 +711,7 @@
 	    function onPlayerTimeline ($e) {
 	    	// console.log ('VideoVimeo.onPlayerTimeline', arguments);	
 	    	var player = $e.target;
-	    	var item = players[player];
+	    	var item = players[player.id];
 	    	// console.log ($e.data);
 	    	/*
 	    	item.progress = Buffer ($e.data);
@@ -639,7 +721,7 @@
 	    function onPlayerPlay ($e) {
 	    	// console.log ('VideoVimeo.onPlayerPause', arguments);	
 	    	var player = $e.target;
-	    	var item = players[player];
+	    	var item = players[player.id];
 	    	item.paused = false;
 	    	item.buffering = false;
 	    	item.onState ? item.onState(item) : null;	    	
@@ -647,7 +729,7 @@
 	    function onPlayerPause ($e) {
 	    	// console.log ('VideoVimeo.onPlayerPause', arguments);	
 	    	var player = $e.target;
-	    	var item = players[player];
+	    	var item = players[player.id];
 	    	item.paused = true;
 	    	item.buffering = false;
 	    	item.onState ? item.onState(item) : null;	  	
@@ -656,7 +738,7 @@
 	    	// console.log ('VideoVimeo.onPlayerEnd', arguments);	
 	    	/*
 	    	var player = $e.target;
-	    	var item = players[player];
+	    	var item = players[player.id];
 	    	item.onError ? item.onError(item) : null;    	
 	    	*/
 	    	item.paused = false;
@@ -666,7 +748,7 @@
 	    function onPlayerError ($e) {
 	    	// console.log ('VideoVimeo.onPlayerError');	
 	    	var player = $e.target;
-	    	var item = players[player];
+	    	var item = players[player.id];
 	    	item.onError ? item.onError(item) : null;    	
 	    }
 
@@ -679,8 +761,8 @@
 	    	
 	    	var iframe = $('<iframe id="'+id+'" src="http://player.vimeo.com/video/'+url+'?api=1&player_id='+id+'" frameborder="0" webkitallowfullscreen mozallowfullscreen allowfullscreen></iframe>');
 	    	iframe.prependTo($item.videoplayer);
-
-	    	var player = $f(iframe[0])
+			
+			var player = $f(iframe[0])
 	    	player.addEvent('ready', function($id) {
 			    onPlayerReady.call(player, {target:player, id:$id});
 			    player.addEvent('play', function ($id) {
@@ -731,7 +813,7 @@
 			*/
 
 			$item.player = player;
-			players[player] = $item;
+			players[player.id] = $item;
 
 			$item.Play = function () {
 				// player.playVideo();
